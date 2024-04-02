@@ -44,7 +44,7 @@ class Scraper
     {
         try {
             $collection = [];
-            $commandSql = "INSERT INTO product (category, name, description, slug, image, price, link) VALUES ";
+            $commandSql = "INSERT INTO product (category, shop_id,, name, description, slug, image, price, link) VALUES ";
             $client = Client::createChromeClient();
             $crawler = $client->request('GET', $source->getUrl());
 
@@ -57,9 +57,11 @@ class Scraper
             }
 
             $max = 0;
+            $prod = 0;
+            // return new JsonResponse(["data" => $crawler->filter($source->getWrapperSelector())->count(), "wapre" => $source->getWrapperSelector()]);
             do {
-
-                $crawler->filter($source->getWrapperSelector())->each(function (Crawler $c) use ($source, &$collection, &$commandSql) {
+                $crawler->filter($source->getWrapperSelector())->each(function (Crawler $c) use ($source, &$collection, &$commandSql, &$prod) {
+                    $prod++;
                     if (!$c->filter($source->getLinkSelector())->count()) {
                         return;
                     }
@@ -76,16 +78,25 @@ class Scraper
                     if (!$price) {
                         $price = $c->filter($source->getPriceSelector())->text();
                     }
-
                     $post->setPrice($price);
 
                     $link = $c->filter($source->getLinkSelector())->attr('href');
+                    if (!strpos($link, "http://")) {
+                        $url = explode("/", $source->getUrl());
+                        $url[count($url) - 1] = "";
+                        $link =  implode($url) . $link;
+                    }
                     $post->setUrl($link);
 
-                    $desk = $c->filter($source->getDescSelector())->text() || "";
+                    $desk = $c->filter($source->getDescSelector())->text();
                     $post->setDescription($desk);
 
                     $img = $c->filter($source->getImageSelector())->attr("src");
+                    if (!strpos($img, "http://")) {
+                        $url = explode("/", $source->getUrl());
+                        $url[count($url) - 1] = "";
+                        $img =  implode($url) . $img;
+                    }
                     $post->setImage($img);
 
                     $price = preg_replace('/[$]\d+[\d,.]*\s*/', '', $price);
@@ -93,7 +104,7 @@ class Scraper
                     $price = str_replace(" ", "", $price);
                     $price = str_replace(",", ".", $price);
 
-                    $commandSql .= "(" . $source->getCategory()->getId() . ", '" . $title . "', '" . $desk . "', '" . $this->slugify($title) . "', '" . $img . "', " . $price . ", '" . $link . "'),";
+                    $commandSql .= "(" . $source->getCategory()->getId() . ", '" . "9, " . $title . "', '" . $desk . "', '" . $this->slugify($title) . "', '" . $img . "', " . $price . ", '" . $link . "'),";
                     $collection[] = $post;
                 });
 
@@ -109,26 +120,33 @@ class Scraper
                         }
 
                         $nextLink = $complement . $crawler->filter($source->getPaginationNextSelector())->attr("href");
+                        // print $crawler->filter($source->getPaginationNextSelector())->attr("href");
                         $crawler = $client->request('GET', $nextLink);
+                        sleep(3);
                     } else {
                         break;
                     }
                 }
 
                 if ($max > 10) break;
+                $prod = 0;
             } while ($nextLink);
 
             $client->close();
             $client->quit();
 
             return new JsonResponse([
-                "data" => new ArrayCollection($collection),
+                "data" => $collection,
                 "sql" => $commandSql
             ]);
         } catch (\Exception $ex) {
             $client->close();
             $client->quit();
+            print "prod " . $prod;
+            print "max " . $max;
             throw $ex;
+        } finally {
+            $client->quit();
         }
     }
 }
